@@ -1,0 +1,19 @@
+# Game files and anything extracted or derived from them
+*.7z
+*.cci
+*.3ds
+*.cia
+*.rvz
+*.iso
+*.wbfs
+work/
+ghidra_proj/
+
+# Portable emulators, Ghidra, JDK (downloaded, large)
+tools/
+
+# Local build/assembler output
+asm/*.o
+asm/*.bin
+__pycache__/
+*.log
