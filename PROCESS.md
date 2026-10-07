@@ -577,7 +577,87 @@ The USA patch is byte-identical to the one tested in co-op. The other three have
 yet; testing them is the same two-window setup with a different `.cci` (and the patch in that
 title ID's mods folder).
 
-## 11. Still open
+## 11. What the port actually broke
+
+The patch was built from the 3DS side alone. Afterwards, to confirm what the Wii does differently,
+I traced the Wii's collision path from the contact rules back up to the collision entry points,
+then lined each step up with its 3DS counterpart.
+
+**The bug, exactly:** the Wii's `CGenericCreature::CollidedWith` has a branch for **dead** enemies
+that sends the collision straight to the contact handler. The 3DS port dropped that branch.
+
+### The Wii code
+
+`CGenericCreature::CollidedWith` (`0x80034A10`), simplified:
+
+```c
+CPatterned::CollidedWith(...);
+if (!creature->active) {                           // bit 0x40 of +0x55C, cleared at death
+    other = lookup(collider);
+    if (other is a character)                      // players are
+        ContactHandler(creature, contactInfo);     // 0x8003C830: debounce, describe, ask the rules
+} else {
+    DispatchToModules(creature, ...);              // 0x8003B540
+}
+```
+
+The 3DS equivalent (`0x232468`, called from a `Creature` virtual in the same role) ends with:
+
+```c
+if (creature->alive)
+    DispatchToBehaviors(creature, ...);            // 0x2EE638
+// dead: nothing
+```
+
+### Step by step
+
+| Step | Wii (Retro) | 3DS (Monster Games port) |
+|---|---|---|
+| **Touch** entry | `0x80034B50`: ignores dead enemies | `Creature::vf9` (`0x2ECD78`): ignores dead enemies. Same as Wii. |
+| **CollidedWith**, alive enemy | dispatch to the enemy's modules (`0x8003B540`) | dispatch to the enemy's behaviours (`0x2EE638`). Same idea. |
+| **CollidedWith**, dead enemy | **contact handler, directly**, if the other actor is a character | **nothing.** The branch is missing. |
+| Dispatcher | walks modules 0 up to the current one | requires an active behaviour |
+| Contact handler | `0x8003C830`: per-actor debounce (`mContactRuleDelay`), describe, rules | `0x254958`: same logic |
+| Contact rules | interpreted from data at runtime | the same rules compiled into 84 C++ classes |
+| Corpse timer | 0.5 s for death types 1 and 3 (`+0xD38`) | identical (`+0x30C`) |
+
+How the Wii side was found:
+1. Started from the Wii rule evaluation (`0x8004FC20`) and followed callers to the contact handler
+   (`0x8003C830`). It has the same per-actor debounce list and `mContactRuleDelay` field as the 3DS
+   handler, which identified it.
+2. The ordinary bop handler (`0x80052660`) is a module method, reached through vtable slot `0x34`.
+   Searching for code that calls that slot on every module found the dispatcher (`0x8003B540`).
+3. Raw branch scans found the dispatcher's two callers, the Touch and CollidedWith entry points.
+   Ghidra hadn't recognised them as functions; disassembling from their prologues (`stwu r1, …`)
+   and decompiling showed the dead-enemy branch.
+4. The `active` bit is cleared by `CPatterned::Death` (`0x8001CDA0`), which `IssueDeath` calls
+   through the creature's vtable (offset `0x108`) as the enemy dies. So a bopped enemy is "dead" to both versions straight away; only the Wii
+   still forwards its collisions.
+
+### Why it plausibly happened
+
+On the Wii, the dead-enemy branch is the **only** route from a corpse's collisions to the bounce
+rules, since both other paths skip dead enemies. Without it, nothing tells the rules that a player
+landed on a corpse. The corpse timer, the "dead + from above = bounce" rule and the corpse's
+collision all survived the port, but nothing connected them.
+
+The 3DS port replaced Retro's *modules* with its own *behaviours* and rewrote the code around them.
+The alive path maps one-to-one onto the new dispatcher, so it was carried over. The dead path calls
+the contact handler directly and has nothing to do with behaviours, so it was easy to lose as the
+"nothing to dispatch to" case. That's speculation; the code can't show intent, but its shape fits.
+It also explains why it went unnoticed: in single player, the bopping player is already bouncing
+away, so only a *second* player can need that half-second.
+
+### How the patch compares
+
+Routine 2 does what the Wii branch does: send a dead enemy's collision straight to the contact
+handler. The hooks sit at slightly different spots: they open the Touch path and the shared
+dispatcher, rather than restoring the missing `else` in `CollidedWith`. The patch also checks the
+corpse timer. The Wii branch has no timer check; it stops when the corpse's collision is switched
+off, which for these deaths happens when that same 0.5 s timer expires. So the result is the Wii's
+behaviour.
+
+## 12. Still open
 - Play-test the Europe, Japan and Korea patches.
 - Test on a real 3DS with Luma3DS.
 - Try a late-game or K level that needs chained bounces.
