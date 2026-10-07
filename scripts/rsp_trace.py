@@ -102,9 +102,15 @@ def describe(t, pc, r):
         res_c, res_p = t.u32(sp + 0xD8), t.u32(sp + 0xDC)
         if not d[0x12]: return None
         return f"RULES on dead: otherType={d[0]} zone={d[9]} -> creature={res_c:#x} player={res_p:#x}"
+    if pc == 0x2326A0:  # CollidedWith (0x232468) dead-enemy exit: r7 = creature, r8 = other actor
+        c, o = r[7], r[8]
+        timer = struct.unpack("<f", t.mem(c + 0x30c, 4))[0]
+        is_player = o != 0 and t.u32(o + 0x108) != 0
+        return (f"DEAD CollidedWith creature={c:08x} other={o:08x} player={is_player} "
+                f"corpseTimer={timer:.3f}  -> original game ignores this")
     return f"stop pc={pc:08x}"
 
-BPS = [0x250E60, 0x3E88C8, 0x254AF0]
+BPS = [0x250E60, 0x2326A0, 0x3E88C8]
 
 def main():
     t = RSP()
@@ -113,7 +119,8 @@ def main():
     # clear anything gdb left behind
     for a in BPS: t.cmd(f"z0,{a:x},4")
     if "--resume-only" in sys.argv:
-        t.cmd("D"); print("resumed + detached"); return
+        # Azahar stays paused after a detach ("D"), so continue and drop the connection instead
+        t._raw_send(b"c"); t.s.close(); print("resumed"); return
     armed = set()
     def arm():
         for a in BPS:

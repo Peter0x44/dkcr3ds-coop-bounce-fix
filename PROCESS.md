@@ -640,9 +640,18 @@ second player landing within half a second needs that branch.
 ### How the patch relates
 
 The patch does what the missing branch did: it sends a dead enemy's collision with a player to the
-contact handler while the 0.5 s corpse timer is running. It does it from the two places Diddy's
-landing actually reaches on the 3DS (the `Touch` check and the behaviour dispatcher), rather than by
-re-adding the branch to `CollidedWith`. The result is the same: same handler, same rules, same window.
+contact handler while the 0.5 s corpse timer is running.
+
+It can't simply re-add the Wii's branch to the 3DS `CollidedWith`, because on the 3DS a player's
+landing never arrives there. A trace of the 3DS during a co-op double bounce showed the corpse's
+`CollidedWith` running only for collisions with the level itself (floor, walls), never with a
+player. Player-vs-enemy contact on the 3DS comes through the `Touch` path instead. So the port also
+moved player contact from the physics path (Wii) to the touch path (3DS).
+
+That's why the patch hooks the two places a player's landing actually reaches on the 3DS: the
+`Touch` check (`Creature::vf9`, which skipped dead enemies) and the behaviour dispatcher (which needs
+an active behaviour). From there it uses the same contact handler, the same rules and the same 0.5 s
+window as the Wii.
 
 ## 12. Still open
 - Play-test the Europe, Japan and Korea patches.
