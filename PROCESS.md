@@ -102,32 +102,194 @@ Steps:
    names like `mDisableCollisionOnDeath` to struct offsets), `scripts/litref.py` (finds code that
    loads a given constant), `scripts/wiidis.py` (quick PowerPC disassembly).
 
-### What the reading found
-- The 3DS **creature death function** (`0x250E60`) is a direct port of the Wii's
-  `CGenericCreature::IssueDeath`: same death types, same 4-letter messages (`RATL`, `DBNH`), same
-  "death type 6/7 = thrown" check.
-- The **contact system**: when something touches a creature, the game builds a small
-  description (who touched it, from which side, whether the creature is dead), asks the
-  creature's **contact rules** what happens, and sends the result to each side. On the 3DS
-  these rules are compiled into classes like `normal_creatureRules`. Result flag `0x10000`
-  means "bounce the player".
-- The rules say **"dead enemy touched from above → bounce the player"**. So the game's own
-  logic allows the bounce; something earlier must be stopping it.
-- Both versions have a **0.5 s corpse timer** (Wii `+0xD38`, 3DS `+0x30C`) that keeps a corpse
-  solid and then turns its collision off.
+### 3.1 Strategy
+
+The plan was to **diff behaviour, not bytes**. The Wii and 3DS builds are compiled for different
+CPUs (PowerPC vs ARM), so their machine code can't be compared directly. But the 3DS port is
+based on Retro's code, so the same *logic* should appear in both. The idea was to find the
+code that runs when an enemy is bopped in each version, line the two up, and look for the
+difference. Most of the work went into finding landmarks: functions I could recognise in both
+binaries.
+
+### 3.2 First probes: strings and a magic number
+
+**Strings.** The quickest way into an unknown binary is its text. The 3DS code has about 8,800
+strings, and searching them for `bop`, `bounce`, `death` and `collision` found a lot:
+- class names like `BopJumpBehavior` and `StunnedByBopBehavior`
+- enemy rule names like `tank_boppable` and `spider_drop_dead_on_bop`
+- data field names like `mDisableCollisionOnDeath`, `mIgnoreAllDuringDeath` and
+  `mContactRuleDelay`
+
+The `m…` field names exist because the game reads enemy settings from data files *by name*.
+That's very useful for reverse engineering, because each name sits next to the code that reads
+it.
+
+The Wii build has fewer useful strings, mostly state-machine names (`IsDead`, `Dead_AI`,
+`IsHittingCreatureOnAttackBounce`), because Retro's data uses hashed IDs instead of names.
+
+**The 25-frame number.** The community said the Wii window is about 25 frames, which is
+25/60 = 0.41667 s. If that were a hard-coded constant, the float `0x3ED55555` would appear
+somewhere. It appeared **exactly once** in the Wii build, in the small-constants area.
+
+On PowerPC, those constants aren't addressed directly. The code reads them as an offset from
+register `r2`, which is set once at startup. So I read the startup code to get `r2 = 0x80627C20`,
+computed the offset (`-0x4684`), and searched every instruction for a load from `r2-0x4684`.
+There was one, at `0x8038578C`, in the **controller input code**: a key-repeat delay.
+
+**Dead end.** That told me the window wasn't a single named constant, so I needed to understand
+the logic instead.
+
+### 3.3 The Wii build had real function names
+
+While extracting the Wii disc I noticed a folder of `.rso` files, which are Wii dynamic modules.
+They link against the main program **by name**, and the list of names they use is in
+`selfile.sel`, with each function's address. Parsing it gave 938 real C++ names, including the
+exact one I wanted: `CGenericCreature::IssueDeath`, the Wii's "an enemy has died" function.
+
+The first decompile of it was broken (`halt_baddata`). The Wii's CPU has extra "paired-single"
+float instructions that standard PowerPC doesn't, and Ghidra stopped at the first one. Installing
+the GameCube/Wii loader extension added those instructions, and re-importing fixed the
+decompiles.
+
+### 3.4 The 3DS build had its class names
+
+The 3DS build has no symbol file, but C++ programs that use `dynamic_cast` keep **RTTI** (run-time
+type information). For each class with virtual functions there's a chain:
+
+1. a name string, e.g. `N36_GLOBAL__N__12_creature_cpp_11fbdbcb8CreatureE`
+2. a **typeinfo** record that points to that string
+3. a **vtable** (the class's list of virtual functions) that points to the typeinfo
+
+`scripts/rtti3ds.py` walks that chain backwards: for each name string, it finds the words that
+point to it, then the words that point to *those*. That recovered 868 classes and their vtables.
+Ghidra then named every virtual function, e.g. `creature::Creature_vf9` (Creature's 10th virtual).
+
+The names also leak **source file names**, because classes in an unnamed C++ namespace get the
+file name mangled in: `creature.cpp`, `b_damaged.cpp`, `b_stunned_bop.cpp`, `rules.cpp`. The
+`rules.cpp` file had **84 classes**, one per enemy kind (`normal_creatureRules`,
+`boppapotamusRules`, `electro_bro_unboppableRules`…). Code shaped like that is usually
+generated from data, which turned out to be right.
+
+### 3.5 Decoding the contact rules
+
+Each rules class has one real method. It takes a small description of a contact and returns two
+32-bit results: what happens to the creature, and what happens to the other actor (the player).
+
+The simplest class, `kill_rule`, always returns `(0x100, 0x10000)`. A guess from the name:
+`0x100` means "kill the creature" and `0x10000` means "the player bounces". Both guesses held up
+later.
+
+`normal_creatureRules` is a decision tree on bytes of the description. Two 4-letter codes show up
+in it, `'KILL'` and `'HBPB'`, compared against a field of the description. That gave a way in.
+
+### 3.6 Finding the contact handler
+
+Ghidra had **no cross-references** to the rules method. It's only called through a vtable, so no
+instruction names its address. Instead, I searched for the `'KILL'` / `'HBPB'` constants **outside**
+the rules classes.
+
+ARM code stores constants in **literal pools**, small data blocks next to the code that loads
+them with `ldr rX, [pc, #offset]`. `scripts/litref.py` finds every such load of a given address.
+It found five users, and one of them was the **contact handler** (`0x254958`). Decompiled, it does
+this:
+
+1. **Debounce:** ignore the other actor if it already touched this creature recently. Each entry
+   lasts `mContactRuleDelay`, 0.1 s by default.
+2. **Describe the contact** (`0x37E5E0`): who the other actor is, which **zone** it touched, and
+   whether this creature is dead. The dead flag is byte `0x12` of the description, set when
+   creature byte `+0x22D` is 0, so `+0x22D` is the creature's "alive" flag.
+3. **Ask the rules,** then send the player's result to the player and the creature's result to
+   the creature's behaviors.
+
+**The zone.** At first I misread it. I assumed zone 0 was a side touch, which made the rules look
+like they'd *hurt* a player who touched a corpse. Reading the zone function's geometry (`0x37E0D8`)
+showed zone 0 means "the other actor's bottom is above this creature's top", i.e. **from above**.
+With that corrected, the dead-creature branch of the rules says:
+
+> dead + touched from above → creature `0x2002`, player `0x12004` (which includes `0x10000`, the bounce)
+
+**Key realisation.** The rules already allow bouncing off a dead enemy. So the bug isn't in the
+rules; something stops the contact from ever reaching them.
+
+### 3.7 A false lead: `mIgnoreAllDuringDeath`
+
+That field name looked like the answer. Its default is `true`, and the name says "ignore
+everything while dying".
+
+Field-name strings are tricky to trace on ARM. The code reaches them with a **PC-relative add**
+(`add r1, pc, #imm`), not a stored pointer, so a plain pointer search finds nothing and Ghidra
+missed the references too. A small scanner for those `add` instructions found the reader. Then
+`scripts/reflect3ds.py` listed every field that function reads, with the offset each is stored at.
+
+The neighbouring fields were `mSuicideOnPlayerTouch`, `mTargetingTime` and `mAttackRangeSquared`.
+That's the settings block of the **Seeker** (a homing enemy), not generic creatures. A good-looking
+name on the wrong struct. The lesson: always check what struct a field belongs to.
+
+(Ghidra also sometimes split ARM functions in the wrong place, so a "function" started mid-way
+through a real one. Reading raw disassembly with capstone around a suspicious address helped
+there.)
+
+### 3.8 Lining up the Wii and 3DS death code
+
+To find the Wii's equivalent of the contact description, I searched the Wii decompile for callers
+of the named function `CGenericCreatureRules::CalculateContactZone`. That led to `0x8004FA20`,
+which also sets a "dead" byte: alive flag cleared, or a death type set. Same idea as the 3DS.
+
+The Wii evaluates its rules from **data** at runtime (`0x800D3FC0`). It then converts the result
+bits with two lookup functions (`0x8004DC50`, `0x8004DD40`) into the **same** output flags the
+3DS uses: `0x100`, `0x10000`, `0x2000`… That confirmed the 3DS's 84 rules classes are a compiled
+form of Retro's rules data. **The rules aren't the difference.**
+
+Next, does the Wii delay death after a bop, leaving the enemy alive for 25 frames? The Wii damage
+function (`0x80042FF0`) calls `IssueDeath` **immediately** when health reaches 0, the same as the
+3DS's `CDamagedBehavior`. So that's not the difference either.
+
+Then the death functions themselves. I matched the 3DS one (`0x250E60`) to Wii `IssueDeath` by
+details that are unlikely by chance:
+- the death type stored in the creature (3DS `+0x192`, Wii `+0xDFC`)
+- the same `0x200` flag and the same "type 6 or 7 = thrown" test
+- the same 4-letter messages sent (`'RATL'`, `'DBNH'`)
+
+### 3.9 The collision filter and the corpse timer
+
+In the 3DS death function, when an enemy goes from alive to dead, it does
+`actor[+0xF0] |= 0x100000`. To work out what that word is:
+- A collision query elsewhere builds its filter by combining `+0xE0`, `+0xE8` and `+0xF0`, so
+  these are the actor's **material list** (`+0xE0`) and **include/exclude filters** (`+0xE8`,
+  `+0xF0`).
+- The player's own death code removes bit `0x100000` from the player's material list, so that bit
+  is the **"character" material**, which players and enemies share.
+
+So the corpse adds "characters" to the things it ignores. **The Wii's `IssueDeath` has no such
+line.** That looked like the bug.
+
+There was a wrinkle. Right after that line, death types 1 and 3 *clear the bit again* and write
+0.5 to `+0x30C`. At first I took `+0x30C` for the hit-flash blink timer, because the player update
+counts it down and toggles visibility. Then the creature's own update (`0x3C57F4`) turned out to
+count it down and, at zero, set the exclusion bit. So for creatures it's a **corpse timer**:
+"stay solid for 0.5 s, then stop colliding".
+
+The Wii has the same mechanism. Its timer is at `+0xD38`, counted down in `0x80033AD0`, and at
+zero `0x80033B10` excludes the same `0x100000` bit. The Wii arms it at `0x80035C5C`, for types 1
+and 3 only, with the constant 0.5 (read via `r2-0x7C80`). The branch structure is identical to the
+3DS, except the Wii has no unconditional exclusion beforehand.
 
 ---
 
 ## 4. The first patch (wrong)
 
-The death code adds a "don't collide with characters" bit to the corpse's collision filter, and
-the Wii's version doesn't. That looked like the whole bug. I built two variants, published them
-in a doc, and asked why there were two (one copied the Wii exactly, one forced the 0.5 s timer).
+From that comparison I concluded the 3DS-only exclusion was the bug, and built a patch to remove
+it. There were two variants: one copied the Wii exactly, and one also forced every death type
+onto the 0.5 s timer. You asked why there were two.
 
-**It didn't work.** You couldn't see any difference in-game. (The debugger later showed why: a
-bop is death type 1, and the original game already clears that bit and starts the 0.5 s timer
-for type 1. The bit was never the problem for bops.) That's why the next step was testing on the
-running game instead of reading more code.
+**It didn't work.** You couldn't see any difference in-game.
+
+**What I'd missed.** I never checked *which death type a bop uses*. The debugger later showed a
+bop is type 1, the case where the original game already clears the bit and starts the timer. So
+on the bop path, the corpse was never losing its collision.
+
+**The lesson.** Reading code shows every road; it doesn't show which road the game actually
+takes. That's what moved the work from reading code to watching the running game.
 
 ### How patches are built and delivered
 `scripts/build_patches.py` builds everything from a list of (address, original word, new word):
@@ -293,6 +455,43 @@ contains the resulting instructions, annotated, and fills in the jump offsets.
 | Routine 1 | `0x3E8880` (8 instructions) | "Alive, **or** corpse timer (`+0x30C`) > 0" → jump back |
 | Hook 2 | `0x2EE644` | Jumps from the behavior dispatcher to routine 2 |
 | Routine 2 | `0x3E88A0` (14 instructions) | If dead and timer running: call the contact handler (`0x22CCC4`) directly, as a behavior would, and return. Otherwise run the replaced instruction and jump back. |
+
+### How the hooks were designed
+
+**Where to put new code.** The code segment's last instruction is at `0x3E8878`, but the memory
+page it lives in runs to `0x3E9000`, and the loader maps whole pages as executable. That leaves
+about 1.9 KB of zeroes that are loaded, executable, and never used. I checked the bytes were all
+zero in `code.bin` before using them.
+
+**Hook 1 (gate 1).** The original instruction at `0x2ECDDC` is `ldrb r0, [r0, #0x2d]`. Here `r0` is
+`creature + 0x200`, so this loads the alive byte at `+0x22D`, and the next instruction tests it.
+The hook replaces just that load with a jump. The routine has to leave `r0` non-zero for "carry
+on" and zero for "ignore", then jump back to the very next instruction (`0x2ECDE0`), so the rest
+of the function runs unchanged. At that point `r5` still holds the creature pointer, so the
+routine uses `r5` to read both the alive byte and the timer.
+
+**Comparing the float timer.** The timer is a float, so the routine uses the VFP (floating-point)
+unit: `vldr` loads it, `vcmpe.f32 s0, #0` compares it with zero, and `vmrs` copies the result into
+the normal condition flags so `movgt` can act on it. Using `s0` is safe: it's a scratch register
+under the ARM calling convention, and the function had just made a call that could have
+overwritten it anyway, so nothing could still be relying on it.
+
+**Hook 2 (gate 2).** At the start of the dispatcher (`0x2EE644`), the registers hold exactly what's
+needed: `r4` = creature, `r1` = the other actor, `r8` = the contact type. The instruction it
+replaces (`ldrb r0, [r0, #0x3c]`) is re-run at the end of the routine's "normal" path, so live
+creatures behave exactly as before. For a dead creature inside its window, the routine calls the
+same contact-handler wrapper (`0x22CCC4`) that each behavior's collision method calls, with the
+same arguments (`type`, `-1`). It then jumps to the dispatcher's existing return code (`0x2EE724`),
+which restores the stack and registers properly.
+
+**Why routine 2 also checks the timer.** Gate 1 already guarantees that only in-window corpses
+reach the dispatcher *from the collision callback*. But the dispatcher has a second caller I hadn't
+traced (`0x232468`, used for grabbed and thrown objects). Checking the timer again keeps that path
+exactly as it was.
+
+**Branch encoding.** ARM's `b` and `bl` store a 24-bit word offset relative to the instruction's
+address + 8. The build script computes each one from the real addresses, so moving a routine
+wouldn't require recalculating anything by hand.
 
 That's **24 words** in total. The first build also carried the 6 edits from the first attempt.
 You asked whether the patch was the bare minimum; it wasn't, so I cut those out and you retested:

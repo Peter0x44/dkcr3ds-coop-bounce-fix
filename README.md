@@ -30,3 +30,6 @@ found the two checks responsible.
 | `scripts/ghidra/` | Headless Ghidra scripts |
 
 No game files are included. To use the analysis scripts you need your own dump of the game.
+
+## License
+Public domain ([Unlicense](LICENSE)).
