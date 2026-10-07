@@ -582,113 +582,67 @@ title ID's mods folder).
 
 ## 11. What the port actually broke
 
-**The 3DS port dropped one branch.** On the Wii, when a **dead** enemy collides with a player,
-`CGenericCreature::CollidedWith` sends that collision straight to the contact handler, and the
-contact rules then bounce the player. The 3DS's equivalent function only handles live enemies;
-for a dead one it does nothing. Everything else the bounce needs survived the port: the corpse
-keeps its collision for 0.5 s, and the rules still say "dead enemy touched from above → bounce".
+**In one sentence:** on the Wii, a dead enemy still passes player collisions to the bounce rules;
+the 3DS port lost the line of code that does that.
 
-This was confirmed by tracing the Wii version running in Dolphin during a co-op bounce, not just by
-reading code.
+### What happens on the Wii
 
-### How the Wii handles a bop and a second player
+Traced live in Dolphin, replaying a co-op save state where DK bops an enemy and Diddy lands on it
+right after:
 
-Traced live in Dolphin (Wii, USA Rev 1), replaying a co-op save state in which DK bops an enemy and
-Diddy lands on it right after:
+1. **DK lands on the enemy.** The enemy dies immediately (death type 1) and is marked "not
+   active". Its corpse stays solid for 0.5 s (the corpse timer).
+2. **Diddy lands on the corpse.** That's a physics collision, handled by the enemy's
+   `CollidedWith` function (`0x80034A10`), which has two branches:
+   - **enemy alive:** pass the collision to the enemy's modules (its AI and behaviour logic);
+   - **enemy dead:** if the other object is a `CPatterned`, pass it **straight to the contact
+     handler** (`0x8003C830`).
 
-```
-CONTACT handler   creature=8147b000 [active=1]                    DK lands on the enemy
-IssueDeath        type=1                                           killed in the same frame
-CPatterned::Death [active → 0]                                     marked dead immediately
-DEAD CollidedWith other=810a0400 (a CPlayer), kind bit 8 set       Diddy lands on the corpse
-CONTACT handler   creature=8147b000 [active=0]  called from 0x80034B00
-```
+   Players count as `CPatterned` in DKCR (the player class derives from it), so Diddy's landing goes
+   to the contact handler.
+3. **The contact handler asks the rules,** which say "dead enemy, touched from above → bounce the
+   player". Diddy bounces.
 
-Step by step:
+The trace shows exactly this: the bop kills the enemy, then a player object collides with the dead
+enemy, and the contact handler is called from inside that dead-enemy branch.
 
-1. **DK's landing** reaches the enemy's contact handler (`0x8003C830`) while it's alive. The rules
-   say "damage + bounce"; the damage takes its last health point, and `IssueDeath` runs at once
-   with **death type 1**.
-2. **`IssueDeath`** calls the creature's death-collision method (vtable offset `0x108`, `0x80035BD0`).
-   That first calls **`CPatterned::Death`** (`0x8001CDA0`), which clears the creature's *active* bit
-   (bit `0x40` of `+0x55C`) and adds the "character" material bit (`0x100000`) to the corpse's
-   collision exclude filter. Then, because this is death type 1, it **removes that exclusion again
-   and starts a 0.5 s corpse timer** (`+0xD38`). So the corpse stays solid to characters for 0.5 s.
-3. **Diddy's landing** produces a physics collision with the corpse. The creature's
-   **`CollidedWith`** (`0x80034A10`) runs:
+### What's different on the 3DS
 
-   ```c
-   CPatterned::CollidedWith(...);
-   if (!creature->active) {                          // dead
-       other = GetObjectById(collider);
-       if (other is a CPatterned)                    // kind flags bit 8
-           ContactHandler(creature, contactInfo);    // 0x8003C830
-   } else {
-       DispatchToModules(creature, ...);             // 0x8003B540
-   }
-   ```
-
-   **Players are `CPatterned` in DKCR:** the player constructor (`0x801F7F80`) calls
-   `CPatterned`'s constructor (`0x8001B410`), which ORs bit 8 into the object's kind flags. The
-   traced object's flags were `0x3F201F` and its vtable is the one that constructor installs.
-   So Diddy passes the check and the contact goes to the handler.
-4. **The contact handler** describes the contact (dead enemy, touched from above) and asks the
-   rules, which return a bounce for the player.
-
-The Wii's other collision entry point, `Touch` (`0x80034B50`), skips dead enemies entirely, and the
-module dispatcher is only used for live ones. So the dead-enemy branch in `CollidedWith` is the
-route that makes the second bounce work.
-
-### The same steps on the 3DS
-
-| Step | Wii (Retro) | 3DS (Monster Games port) |
-|---|---|---|
-| Bop kill | Immediate, death type 1 | Immediate, death type 1 |
-| Death collision handling | Exclude characters, then (type 1) re-include and start a 0.5 s corpse timer | Identical |
-| `Touch` entry | Skips dead enemies | `Creature::vf9` (`0x2ECD78`): skips dead enemies |
-| `CollidedWith`, alive enemy | Dispatch to modules (`0x8003B540`) | Dispatch to behaviours (`0x2EE638`) |
-| `CollidedWith`, **dead** enemy | **Contact handler, for any `CPatterned`** | **Nothing** (`0x232468` ends with `if (alive) dispatch;`) |
-| Contact handler | `0x8003C830`: debounce, describe, rules | `0x254958`: same logic |
-| Contact rules | Interpreted from data | Same rules compiled into 84 C++ classes |
-
-The 3DS function at `0x232468` is the counterpart of the Wii's `CollidedWith`: it's reached from the
-creature's collision virtuals, takes the collision list, and for a live creature calls the behaviour
-dispatcher, exactly where the Wii calls its module dispatcher. Its last lines are:
+The 3DS has the same pieces: the immediate type-1 death, the 0.5 s corpse timer, the contact handler
+and the same rules. But its version of `CollidedWith` (`0x232468`) ends like this:
 
 ```c
-if (creature->alive != 0) {
-    DispatchToBehaviors(creature, other, collisions, 0);   // 0x2EE638
-    return;
-}
+if (creature->alive)
+    DispatchToBehaviors(...);
+// dead: nothing
 ```
 
-with no `else`.
+The dead-enemy branch is gone. Nothing else on the 3DS passes a corpse's collisions to the rules
+either, so player 2's landing is simply ignored and they fall through.
 
-### Why it plausibly happened
+| | Wii | 3DS (original) |
+|---|---|---|
+| Bop kills the enemy | Immediately, type 1 | Immediately, type 1 |
+| Corpse stays solid | 0.5 s | 0.5 s |
+| Dead enemy + player collision | Sent to the contact handler | **Ignored** |
+| Rules for "dead + from above" | Bounce | Bounce (never reached) |
 
-The 3DS port replaced Retro's *modules* with its own *behaviours* (`b_damaged.cpp`,
-`b_stunned_bop.cpp`…) and rewrote the code that feeds collisions to them. The alive path maps
-directly onto the new behaviour dispatcher, so it was carried over. The dead path doesn't involve
-modules at all: it calls the contact handler directly. In code being reorganised around
-behaviours, that's an easy branch to lose. This is an inference from the code's shape, not
-something the binary can prove.
+### Why it was probably lost
 
-Single-player can't reveal it: after a bop the player is already bouncing away and never touches the
-corpse again. Only a second player landing within the 0.5 s window needs that branch, and 3DS co-op
-needs two consoles and two copies of the game, so it was likely tested far less.
+The 3DS port replaced Retro's *modules* with its own *behaviours* and rewrote the code that hands
+collisions to them. The "alive" branch hands collisions to modules/behaviours, so it was carried
+over. The "dead" branch doesn't involve them at all, which makes it easy to drop in a rewrite. (This
+is an inference from the code, not something the binary can prove.)
 
-### How the patch compares
+It's invisible in single player: after a bop you bounce away and never touch the corpse again. Only a
+second player landing within half a second needs that branch.
 
-The patch restores the Wii's result by a slightly different route. Instead of adding the missing
-`else` to `CollidedWith`, it changes the two places the player's landing actually reaches on the
-3DS:
+### How the patch relates
 
-- **routine 1:** lets `Creature::vf9` through while the corpse timer runs;
-- **routine 2:** sends a dead enemy's collision straight to the contact handler, as the Wii branch
-  does.
-
-The Wii branch has no timer check of its own; it stops when the corpse's collision is switched off,
-which for death type 1 is when the same 0.5 s timer expires. So the window is the same on both.
+The patch does what the missing branch did: it sends a dead enemy's collision with a player to the
+contact handler while the 0.5 s corpse timer is running. It does it from the two places Diddy's
+landing actually reaches on the 3DS (the `Touch` check and the behaviour dispatcher), rather than by
+re-adding the branch to `CollidedWith`. The result is the same: same handler, same rules, same window.
 
 ## 12. Still open
 - Play-test the Europe, Japan and Korea patches.
