@@ -627,6 +627,48 @@ either, so player 2's landing is simply ignored and they fall through.
 | Dead enemy + player collision | Sent to the contact handler | **Ignored** |
 | Rules for "dead + from above" | Bounce | Bounce (never reached) |
 
+### Wii modules vs 3DS behaviours
+
+Both versions are C++, but they organise enemy logic differently. Retro's Wii engine drives much of
+it from **data loaded from the game files**; Monster Games' 3DS port turns much of that into
+**compiled C++ classes**. The bug sits right at the seam between the two designs.
+
+**On the Wii, an enemy is a stack of modules.** Each enemy (`CGenericCreature`) carries a list of
+*modules* (`CGameCharacterModule`), each handling one aspect: movement, damage, a finite-state
+machine (`CFiniteStateMachineModule`) whose states (`Dead_AI`, `DeathDelete`…) come from an asset
+file, and so on. When the enemy collides with something, the module dispatcher (`0x8003B540`) calls
+each module's collision method in turn, up to the current one. A dead enemy skips the modules and
+goes straight to the contact handler instead.
+
+**On the 3DS, an enemy has behaviours.** Each enemy (`creature::Creature`) has a list of
+*behaviours*, each a C++ class in its own source file: `b_damaged.cpp`, `b_stunned_bop.cpp`,
+`b_bopjump.cpp`, `b_grabbed.cpp` and so on. One behaviour is *active* at a time. The dispatcher
+(`0x2EE638`) passes a collision to the behaviours only while there is an active one, and a corpse
+has none.
+
+**Contact rules, data vs code.** Both versions decide what a contact does (kill, damage, bounce)
+with the same rules, but store them differently:
+- **Wii:** the rules are data, walked by a small interpreter (`0x800D3FC0`). Its output bits are
+  translated into the engine's flags (`0x8004DC50`, `0x8004DD40`).
+- **3DS:** the same rules are compiled into 84 C++ classes in `rules.cpp`, one per enemy kind
+  (`normal_creatureRules`, `kill_rule`, `boppapotamusRules`…). Each is a small decision function
+  that returns the same flags directly, e.g. `0x10000` = bounce the player.
+
+This is probably for speed: interpreting data at runtime costs time, and the 3DS CPU is far weaker
+than the Wii's.
+
+**Enemy settings.** The 3DS reads enemy settings by *name* (`mDeathType`, `mContactRuleDelay`…);
+the Wii uses hashed IDs. The names made the 3DS much easier to read.
+
+| | Wii (Retro) | 3DS (Monster Games port) |
+|---|---|---|
+| Enemy logic units | Modules, incl. data-driven state machines | Behaviour classes (`b_*.cpp`) |
+| Collision dispatch | All modules up to the current one | Only while a behaviour is active |
+| Dead enemy + player | Contact handler, directly | Dropped (the bug) |
+| Contact rules | Data, interpreted at runtime | Compiled into 84 C++ classes |
+| Enemy settings | Hashed IDs | Field names |
+| Player contact arrives via | `CollidedWith` (physics) | `Touch` |
+
 ### Why it was probably lost
 
 The 3DS port replaced Retro's *modules* with its own *behaviours* and rewrote the code that hands
