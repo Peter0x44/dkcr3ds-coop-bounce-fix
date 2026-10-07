@@ -3,7 +3,8 @@
 param([string]$Rom)
 $root = Split-Path -Parent $PSScriptRoot
 $az = "$root\tools\azahar"
-if (-not $Rom) { $Rom = (Get-ChildItem "$root\work\*.cci" | Select-Object -First 1).FullName }
+# default: the USA dump if present, else the first .cci in work\
+if (-not $Rom) { $Rom = (Get-ChildItem "$root\work\*.cci" | Sort-Object { $_.Name -notlike '*(USA)*' } | Select-Object -First 1).FullName }
 $rom = $Rom
 if (-not (Get-Process azahar-room -ErrorAction SilentlyContinue)) {
   Start-Process "$az\p1\azahar-room.exe" -ArgumentList '--room-name','DKCR-test','--port','24872','--max_members','4','--preferred-app','DKCR3D','--preferred-app-id','00040000000CCE00' -WindowStyle Minimized

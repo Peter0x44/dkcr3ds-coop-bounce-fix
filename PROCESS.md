@@ -6,8 +6,8 @@ in one session on 2026-10-06/07. It covers everything: the tools, the reverse en
 the wrong first guess, the two-player test rig, the live debugging, and the final patch.
 
 **Result:** after P1 bops an enemy, P2 can bounce off it for the next 0.5 s, like on the Wii.
-Tested in co-op in two emulator instances. The patch is `patch/coop_bounce_fix/code.ips` (or the
-24-line cheat next to it).
+Tested in co-op in two emulator instances. The patch is `patch/coop_bounce_fix/USA/code.ips` (or the
+24-line cheat next to it), with versions for Europe, Japan and Korea alongside (section 10).
 
 ---
 
@@ -507,8 +507,9 @@ at 60 fps, 30 fps, or during slowdown. The community's "25 frames" was a measure
 
 | Path | What |
 |---|---|
-| `patch/coop_bounce_fix/code.ips` | **The patch** (IPS, for Azahar/Citra or Luma3DS) |
-| `patch/coop_bounce_fix/cheat_gateway.txt` | Same patch as a 24-line cheat |
+| `patch/coop_bounce_fix/<REGION>/code.ips` | **The patch** (IPS, for Azahar/Citra or Luma3DS), per region |
+| `patch/coop_bounce_fix/<REGION>/cheat_gateway.txt` | Same patch as a 24-line cheat |
+| `scripts/find_sites.py` | Finds the patch sites in another build by signature |
 | `patch/README.md` | Install instructions |
 | `scripts/build_patches.py` | Builds the patch; `python scripts/build_patches.py work/code.bin` also verifies the original bytes |
 | `asm/cave1.s`, `asm/cave2.s` | Source of the two routines |
@@ -537,7 +538,47 @@ powershell -ExecutionPolicy Bypass -File scripts/uia_connect.ps1
 
 Then start co-op in the left window as DK and join from the right window as Diddy.
 
-## 10. Still open
+## 10. Other regions: Europe, Japan, Korea
+
+After the USA patch worked, you added the European, Japanese and Korean releases. All three dumps
+were already decrypted. Each has its own title ID and a slightly different code size, so the USA
+patch can't simply be reused:
+
+| Region | Title ID | Code size | vs USA |
+|---|---|---|---|
+| USA | `00040000000CCE00` | `0x2E887C` | reference |
+| Europe | `00040000000CCF00` | `0x2E88BC` | +0x40 |
+| Japan | `00040000000CC000` | `0x2E899C` | +0x120 |
+| Korea | `00040000000FFC00` | `0x2E884C` | -0x30 |
+
+Instead of repeating the reverse engineering, `scripts/find_sites.py` finds each patch site by
+**signature**. It takes a window of 6–24 instructions around each USA site and searches the other
+build for the same sequence. Words that encode a relative distance (`b`/`bl` targets, PC-relative
+loads and adds) are masked out, because those change whenever code shifts.
+
+A match is trusted only if:
+- **each signature matches exactly once** in the build,
+- the **distances between related sites** are the same as in USA (hook 1 → hook 2 = `0x1868`;
+  hook 2 → dispatcher return = `0xE0`),
+- the matched windows contain the **same struct offsets** the routines rely on (`+0x22D`, `+0x30C`,
+  `+0x3C`), so the creature layout is unchanged.
+
+All three regions passed. Japan's code is shifted the most (an extra `0x108` before the hooks), and
+its contact-handler wrapper moved too (`0x22CD1C` instead of `0x22CCC4`). Each build also has zero
+padding after its code for the routines.
+
+`scripts/build_patches.py` now holds a table of the five addresses per region and builds all four
+patches from the same routines. With each region's `code.bin`, it checks every original word
+first. A final check applied each patch to its region's code and disassembled it: every hook jumps
+into its routine and back to the next instruction, and in each build the routine's call reaches
+the same contact handler.
+
+The USA patch is byte-identical to the one tested in co-op. The other three haven't been played
+yet; testing them is the same two-window setup with a different `.cci` (and the patch in that
+title ID's mods folder).
+
+## 11. Still open
+- Play-test the Europe, Japan and Korea patches.
 - Test on a real 3DS with Luma3DS.
 - Try a late-game or K level that needs chained bounces.
 - The Switch version's 1.1.0 update fixed the same bug; comparing its window length would be a
