@@ -12,24 +12,32 @@ Two small code patches for **Donkey Kong Country Returns 3D**, for all four reta
 
 **Status:**
 - **Bounce fix:** tested in co-op in Azahar with the USA version.
-- **Region-free patch:** tested in Azahar with a USA copy and a patched European copy playing together.
-- **Other regions:** the remaining versions use the same code at each build's addresses, found and
-  verified automatically, but not yet played.
+- **Region-free patch:** tested in Azahar with a USA copy playing together with a patched European
+  copy, and with a patched Japanese copy.
+- **Other versions:** the Korean region-free patch and the non-USA bounce fixes use the same code
+  at each build's addresses, found and verified automatically, but not play-tested.
 - **Real hardware:** nothing tested yet.
 
 ## Download
-Each folder has `code.ips` (IPS patch for Azahar/Citra or Luma3DS) and `cheat_gateway.txt` (the same
-patch as a cheat). Luma loads only one `code.ips` per game, so use **both** if you want both fixes.
 
-| Region | Title ID | Bounce fix | Region-free | Both |
+**Recommended: the combined patch ("Both")**, which includes both fixes. Pick your version by
+title ID and download `code.ips` (or `cheat_gateway.txt` for the cheat version):
+
+| Region | Title ID | **Both (recommended)** | Bounce fix only | Region-free only |
 |---|---|---|---|---|
-| USA | `00040000000CCE00` | [USA](patch/coop_bounce_fix/USA/) | [USA](patch/region_free_multiplayer/USA/) | [USA](patch/both/USA/) |
-| Europe | `00040000000CCF00` | [EUR](patch/coop_bounce_fix/EUR/) | [EUR](patch/region_free_multiplayer/EUR/) | [EUR](patch/both/EUR/) |
-| Japan | `00040000000CC000` | [JPN](patch/coop_bounce_fix/JPN/) | [JPN](patch/region_free_multiplayer/JPN/) | [JPN](patch/both/JPN/) |
-| Korea | `00040000000FFC00` | [KOR](patch/coop_bounce_fix/KOR/) | [KOR](patch/region_free_multiplayer/KOR/) | [KOR](patch/both/KOR/) |
+| USA | `00040000000CCE00` | **[patch/both/USA](patch/both/USA/)** | [USA](patch/coop_bounce_fix/USA/) | [USA](patch/region_free_multiplayer/USA/) |
+| Europe | `00040000000CCF00` | **[patch/both/EUR](patch/both/EUR/)** | [EUR](patch/coop_bounce_fix/EUR/) | [EUR](patch/region_free_multiplayer/EUR/) |
+| Japan | `00040000000CC000` | **[patch/both/JPN](patch/both/JPN/)** | [JPN](patch/coop_bounce_fix/JPN/) | [JPN](patch/region_free_multiplayer/JPN/) |
+| Korea | `00040000000FFC00` | **[patch/both/KOR](patch/both/KOR/)** | [KOR](patch/coop_bounce_fix/KOR/) | [KOR](patch/region_free_multiplayer/KOR/) |
 
-The region-free patch makes every copy use the USA version's network ID, so unpatched USA copies
-can already join; only non-USA copies need it.
+**Which one?**
+- **Both** is what almost everyone wants. There's no downside to having both fixes.
+- The **separate patches** are kept for anyone who wants to examine or apply one fix on its own.
+  Luma loads only one `code.ips` per game, so you can't install two of these together; use
+  **Both** for that.
+- **Mixed regions:** every patched copy uses the USA version's network ID, so an unpatched USA copy
+  can already play with patched copies of any region. Everyone still needs the bounce fix to get
+  the bounce, so just give everyone **Both**.
 
 Install instructions and a short technical summary: [`patch/README.md`](patch/README.md).
 

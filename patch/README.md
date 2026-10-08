@@ -2,14 +2,17 @@
 
 Three folders, each with a `code.ips` and a `cheat_gateway.txt` per region:
 
-- `coop_bounce_fix/`: both players can bounce off the same enemy
-- `region_free_multiplayer/`: different regions can play local co-op together
-- `both/`: the two combined. Luma loads one `code.ips` per game, so use this for both fixes.
+- **`both/` (recommended):** both fixes in one patch. Use this unless you have a reason not to.
+- `coop_bounce_fix/`: only the bounce fix (both players can bounce off the same enemy).
+- `region_free_multiplayer/`: only the region fix (different regions can play local co-op together).
+
+The separate folders are there to examine each fix on its own. Luma loads only one `code.ips` per
+game, so to get both fixes use `both/`, not two separate patches.
 
 ## Co-op enemy bounce fix
 
 **Status:** USA tested in co-op in Azahar; both players can now bounce off the same enemy. Europe,
-Japan and Korea use the same code at their own addresses (verified by build script), not yet played.
+Japan and Korea use the same code at their own addresses (verified by build script), not play-tested.
 
 **Bug:** when player 1 bops an enemy, player 2 falls straight through it. The game already
 keeps a bopped enemy's corpse solid for 0.5 s (death type 1 starts a corpse timer), but two
@@ -51,6 +54,10 @@ the USA ID (flag bits unchanged):
 Helper address: USA `0x1201D4`, Europe `0x1201F4`, Japan `0x1201FC`, Korea `0x120218`. Unpatched
 USA copies already use this ID, so they can join patched copies of any region.
 
+**Status:** tested in Azahar with a USA copy playing together with a patched European copy, and with
+a patched Japanese copy. The Korean patch is the same three instructions at Korea's helper address,
+not play-tested.
+
 ## Pick your region
 Use the folder matching your game's title ID (`TID` below). Bounce-fix addresses elsewhere in this
 file are the USA build's; the other builds have the same code at slightly shifted addresses:
@@ -63,8 +70,8 @@ file are the USA build's; the other builds have the same code at slightly shifte
 | Korea | `00040000000FFC00` | `coop_bounce_fix/KOR/` | `0x2ECDAC` | `0x2EE614` | `0x3E8850` |
 
 ## Install
-Replace `<TID>` with your region's title ID, and pick the patch folder (`coop_bounce_fix`,
-`region_free_multiplayer` or `both`).
+Replace `<TID>` with your region's title ID, and use the files from `both/<REGION>/` (or one of the
+separate folders if you only want one fix).
 - **Azahar / Citra:** `<user>/load/mods/<TID>/exefs/code.ips`
   (or right-click the game → *Open Mods Location*).
 - **Real 3DS (Luma3DS):** `sd:/luma/titles/<TID>/code.ips`, then enable

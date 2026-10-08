@@ -755,15 +755,15 @@ orr r2, r2, r1          ; was: orrne r2, r2, #1          (same flag; r1 is 0 or 
 For every combination of the flag bits, the result equals what an unpatched USA copy produces.
 So patched copies of any region and **unpatched USA copies** all use the same ID.
 
-**Tested:** in Azahar, with a USA copy (no region patch) and a European copy with the patch,
-playing local co-op together.
+**Tested:** in Azahar, with a USA copy (no region patch) playing local co-op together with a
+patched European copy, and then with a patched Japanese copy. The Korean patch is the same three
+instructions at Korea's helper address and wasn't play-tested.
 
 The build script produces it as `patch/region_free_multiplayer/` and, combined with the bounce fix,
 as `patch/both/`. Luma loads only one `code.ips` per game, hence the combined version.
 
 ## 13. Still open
-- Play-test the Europe, Japan and Korea bounce patches, and the region-free patch with Japanese and
-  Korean copies.
+- Play-test the Europe, Japan and Korea bounce patches, and the region-free patch with a Korean copy.
 - Test on a real 3DS with Luma3DS.
 - Try a late-game or K level that needs chained bounces.
 - The Switch version's 1.1.0 update fixed the same bug; comparing its window length would be a
