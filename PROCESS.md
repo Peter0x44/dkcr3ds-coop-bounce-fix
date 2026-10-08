@@ -511,6 +511,7 @@ at 60 fps, 30 fps, or during slowdown. The community's "25 frames" was a measure
 |---|---|
 | `patch/coop_bounce_fix/<REGION>/code.ips` | **The patch** (IPS, for Azahar/Citra or Luma3DS), per region |
 | `patch/coop_bounce_fix/<REGION>/cheat_gateway.txt` | Same patch as a 24-line cheat |
+| `patch/region_free_multiplayer/<REGION>/`, `patch/both/<REGION>/` | Region-free local multiplayer patch (section 12), and both patches combined |
 | `scripts/find_sites.py` | Finds the patch sites in another build by signature |
 | `patch/README.md` | Install instructions |
 | `scripts/build_patches.py` | Builds the patch; `python scripts/build_patches.py work/code.bin` also verifies the original bytes |
@@ -695,8 +696,74 @@ That's why the patch hooks the two places a player's landing actually reaches on
 an active behaviour). From there it uses the same contact handler, the same rules and the same 0.5 s
 window as the Wii.
 
-## 12. Still open
-- Play-test the Europe, Japan and Korea patches.
+## 12. Region-free local multiplayer
+
+**The problem you hit:** you and a friend with a European copy couldn't see each other in local
+co-op. There was no error; the other session just never appeared. With two European copies it
+worked.
+
+**How 3DS local play finds sessions:** the system's local wireless service ("UDS") only shows
+sessions advertised with the same **local communication ID** as the one the game searches for.
+Games usually build that ID from their title's unique ID, and each region of DKCR 3D has a
+different one:
+
+| Region | Title ID | Unique ID |
+|---|---|---|
+| USA | `00040000000CCE00` | `0xCCE` |
+| Europe | `00040000000CCF00` | `0xCCF` |
+| Japan | `00040000000CC000` | `0xCC0` |
+| Korea | `00040000000FFC00` | `0xFFC` |
+
+**Finding it:** searching the USA code for the constant `0xCCE` found it in two literal pools. The
+code loading them is the game's two UDS calls, both named in its error-logging strings:
+
+```c
+// searching for sessions (nn::uds::CTR::Scan)
+id = MakeCommId(0xCCE, 0);         // FUN_001201d4
+Scan(buffer, 0x2000, 1, id);
+
+// hosting a session (nn::uds::CTR::CreateNetwork)
+id = MakeCommId(0xCCE, 0);
+CreateNetwork(1, maxPlayers, id, ...);
+```
+
+The helper (`0x1201D4` in USA) returns `(uniqueId << 8) | flags`. The European build has `0xCCF` at
+the same spots, and Japan builds `0xCC0` directly in a `mov` instruction. Korea computes `0xFFC` from
+another constant (`0x10B4 - 0xB8`).
+
+**Checking for other region locks:** before patching, the rest of the network code was checked
+for anything else region-specific:
+- the beacon data each session advertises starts with the same magic, `'rwnu'`, in every
+  version, and that's what the scan-result handler checks;
+- the extra value the host and join calls pass comes from the network object's runtime state, not
+  from a region constant.
+
+The communication ID was the only difference.
+
+**The patch:** the helper is called only from those two places, and its code is identical in all
+four versions. So instead of patching each region's ID constant (which can't be done in one
+instruction for Japan, since `0xCCE` doesn't fit an ARM immediate), the helper itself is changed
+to always build USA's ID:
+
+```
+mov r0, #0xcc0          ; was: bic r0, r0, #0xf00000    (ignore the caller's ID)
+...
+orr r2, r2, #0xe00      ; was: cmp r1, #0               (0xcc0 | 0xe = 0xcce, after the << 8)
+orr r2, r2, r1          ; was: orrne r2, r2, #1          (same flag; r1 is 0 or 1)
+```
+
+For every combination of the flag bits, the result equals what an unpatched USA copy produces.
+So patched copies of any region and **unpatched USA copies** all use the same ID.
+
+**Tested:** in Azahar, with a USA copy (no region patch) and a European copy with the patch,
+playing local co-op together.
+
+The build script produces it as `patch/region_free_multiplayer/` and, combined with the bounce fix,
+as `patch/both/`. Luma loads only one `code.ips` per game, hence the combined version.
+
+## 13. Still open
+- Play-test the Europe, Japan and Korea bounce patches, and the region-free patch with Japanese and
+  Korean copies.
 - Test on a real 3DS with Luma3DS.
 - Try a late-game or K level that needs chained bounces.
 - The Switch version's 1.1.0 update fixed the same bug; comparing its window length would be a

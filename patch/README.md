@@ -1,4 +1,12 @@
-# DKC Returns 3D — co-op enemy bounce fix
+# DKC Returns 3D — co-op fixes
+
+Three folders, each with a `code.ips` and a `cheat_gateway.txt` per region:
+
+- `coop_bounce_fix/`: both players can bounce off the same enemy
+- `region_free_multiplayer/`: different regions can play local co-op together
+- `both/`: the two combined. Luma loads one `code.ips` per game, so use this for both fixes.
+
+## Co-op enemy bounce fix
 
 **Status:** USA tested in co-op in Azahar; both players can now bounce off the same enemy. Europe,
 Japan and Korea use the same code at their own addresses (verified by build script), not yet played.
@@ -24,11 +32,30 @@ checks from ignoring collisions during that window. After it, the corpse stops b
 
 The patch is 24 words: two 1-instruction hooks and two routines (8 and 14 instructions).
 
-## Pick your region
-Use the folder matching your game's title ID (`TID` below). Addresses elsewhere in this file are
-the USA build's; the other builds have the same code at slightly shifted addresses:
+## Region-free local multiplayer
 
-| Region | TID | Folder | hook 1 | hook 2 | routines |
+**Bug:** 3DS local play only shows sessions with the same *local communication ID*. The game builds
+it from its region's unique ID (USA `0xCCE`, Europe `0xCCF`, Japan `0xCC0`, Korea `0xFFC`), so
+copies from different regions never see each other's sessions, with no error.
+
+**Fix:** the ID is built by one small helper, called only when scanning for sessions and when
+creating one. Its code is identical in all four versions. Three instructions make it always build
+the USA ID (flag bits unchanged):
+
+| Offset in helper | Original | Patched |
+|---|---|---|
+| `+0x04` | `bic r0, r0, #0xf00000` | `mov r0, #0xcc0` |
+| `+0x18` | `cmp r1, #0` | `orr r2, r2, #0xe00` |
+| `+0x1C` | `orrne r2, r2, #1` | `orr r2, r2, r1` |
+
+Helper address: USA `0x1201D4`, Europe `0x1201F4`, Japan `0x1201FC`, Korea `0x120218`. Unpatched
+USA copies already use this ID, so they can join patched copies of any region.
+
+## Pick your region
+Use the folder matching your game's title ID (`TID` below). Bounce-fix addresses elsewhere in this
+file are the USA build's; the other builds have the same code at slightly shifted addresses:
+
+| Region | TID | Folder | bounce hook 1 | bounce hook 2 | bounce routines |
 |---|---|---|---|---|---|
 | USA | `00040000000CCE00` | `coop_bounce_fix/USA/` | `0x2ECDDC` | `0x2EE644` | `0x3E8880` |
 | Europe | `00040000000CCF00` | `coop_bounce_fix/EUR/` | `0x2ECE18` | `0x2EE680` | `0x3E88C0` |
@@ -36,7 +63,8 @@ the USA build's; the other builds have the same code at slightly shifted address
 | Korea | `00040000000FFC00` | `coop_bounce_fix/KOR/` | `0x2ECDAC` | `0x2EE614` | `0x3E8850` |
 
 ## Install
-Replace `<TID>` with your region's title ID.
+Replace `<TID>` with your region's title ID, and pick the patch folder (`coop_bounce_fix`,
+`region_free_multiplayer` or `both`).
 - **Azahar / Citra:** `<user>/load/mods/<TID>/exefs/code.ips`
   (or right-click the game → *Open Mods Location*).
 - **Real 3DS (Luma3DS):** `sd:/luma/titles/<TID>/code.ips`, then enable

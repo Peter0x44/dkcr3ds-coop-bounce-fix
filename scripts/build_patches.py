@@ -1,4 +1,6 @@
-"""Build the DKCR 3D (USA, 00040000000CCE00) co-op enemy-bounce fix.
+"""Build the DKCR 3D co-op enemy-bounce fix and the region-free local multiplayer patch.
+
+Co-op enemy-bounce fix
 
 A bop kills an enemy with death type 1, which keeps the corpse solid and starts a 0.5 s corpse
 timer (creature+0x30C). Two checks then throw away every collision with the dead enemy, so the
@@ -11,15 +13,22 @@ second player falls through:
 The fix hooks both and adds two routines in the zero padding at the end of .text
 (text ends 0x3E887C, its page ends 0x3E9000). Assembly source: asm/cave1.s, asm/cave2.s.
 
+Region-free local multiplayer
+Local play only finds sessions with the same local communication ID, which the game builds from
+its region's unique ID (USA 0xCCE, EUR 0xCCF, JPN 0xCC0, KOR 0xFFC) in one small helper, called
+only when scanning for and creating sessions. The patch makes that helper always build USA's ID,
+so every patched copy (and any unpatched USA copy) can see the others.
+
 usage: python scripts/build_patches.py [REGION code.bin ...]
-  Writes patch/coop_bounce_fix/<REGION>/ for USA, EUR, JPN and KOR. For each REGION given with its
+  Writes patch/<patch>/<REGION>/ for USA, EUR, JPN and KOR, for three patches: coop_bounce_fix,
+  region_free_multiplayer, and both (Luma loads only one code.ips per game). For each REGION given with its
   code.bin (the game's decompressed ExeFS .code, see scripts/extract_3ds_code.py), every original
   word is checked first, so the script refuses a mismatched build.
 """
 import os, struct, sys
 
 BASE = 0x100000
-OUT = os.path.join(os.path.dirname(__file__), "..", "patch", "coop_bounce_fix")
+OUT = os.path.join(os.path.dirname(__file__), "..", "patch")
 
 def b(src, dst, cond=0xE):  # ARM B
     return (cond << 28) | 0x0A000000 | (((dst - (src + 8)) >> 2) & 0xFFFFFF)
@@ -74,27 +83,49 @@ def build(hook1, hook2, disp_ret, wrapper, cave):
         (c2 + 0x34, 0, b(c2 + 0x34, hook2 + 4), "b       hook2+4"),
     ]
 
+# nn::uds MakeLocalCommunicationId-style helper (identical code in all four builds):
+#   ldr r2,[pc,#0x20] / bic r0,r0,#0xF00000 / ldrb r3,[r2,#0x14] / mov r2,#0x10 / tst r3,#1 /
+#   moveq r2,#0x90 / cmp r1,#0 / orrne r2,r2,#1 / orr r0,r2,r0,lsl #8 / bx lr
+COMM_ID_HELPER = {"USA": 0x1201D4, "EUR": 0x1201F4, "JPN": 0x1201FC, "KOR": 0x120218}
+
+def build_region_free(helper):
+    """Always return USA's local communication ID (unique ID 0xCCE), keeping the flag bits."""
+    return [
+        (helper + 0x04, 0xE3C0060F, 0xE3A00D33, "mov r0, #0xcc0      ; was bic r0,r0,#0xf00000 (ignore caller's ID)"),
+        (helper + 0x18, 0xE3510000, 0xE3822C0E, "orr r2, r2, #0xe00  ; was cmp r1,#0 (0xcc0|0xe = 0xcce after <<8)"),
+        (helper + 0x1C, 0x13822001, 0xE1822001, "orr r2, r2, r1      ; was orrne r2,r2,#1 (r1 is 0 or 1)"),
+    ]
+
 def ips(patch):
     out = bytearray(b"PATCH")
     for addr, _, new, _ in patch:  # record: 24-bit offset, 16-bit size, data
         out += struct.pack(">I", addr - BASE)[1:] + struct.pack(">H", 4) + struct.pack("<I", new)
     return bytes(out + b"EOF")
 
-def cheat(patch):
-    return "\n".join(["[Co-op enemy bounce fix]"] + [f"{a:08X} {n:08X}" for a, _, n, _ in patch]) + "\n"
+TITLES = {"coop_bounce_fix": "Co-op enemy bounce fix",
+          "region_free_multiplayer": "Region-free local multiplayer",
+          "both": "Co-op enemy bounce fix + region-free local multiplayer"}
+
+def cheat(patch, name):
+    return "\n".join([f"[{TITLES[name]}]"] + [f"{a:08X} {n:08X}" for a, _, n, _ in patch]) + "\n"
 
 # usage: build_patches.py [REGION code.bin ...]  -> verifies original words for those regions
 checks = dict(zip(sys.argv[1::2], sys.argv[2::2]))
 for region, (tid, *sites) in REGIONS.items():
-    patch = build(*sites)
+    patches = {
+        "coop_bounce_fix": build(*sites),
+        "region_free_multiplayer": build_region_free(COMM_ID_HELPER[region]),
+    }
+    patches["both"] = patches["coop_bounce_fix"] + patches["region_free_multiplayer"]
     if region in checks:
         code = open(checks[region], "rb").read()
-        for addr, old, _, _ in patch:
+        for addr, old, _, _ in patches["both"]:
             cur = struct.unpack_from("<I", code, addr - BASE)[0]
             assert cur == old, f"{region} {addr:#x}: expected {old:#010x}, found {cur:#010x}"
         print(f"{region}: original bytes verified")
-    out = os.path.join(OUT, region)
-    os.makedirs(out, exist_ok=True)
-    open(os.path.join(out, "code.ips"), "wb").write(ips(patch))
-    open(os.path.join(out, "cheat_gateway.txt"), "w", newline="\n").write(cheat(patch))
-    print(f"{region} ({tid}): {len(patch)} words -> {out}")
+    for name, patch in patches.items():
+        out = os.path.join(OUT, name, region)
+        os.makedirs(out, exist_ok=True)
+        open(os.path.join(out, "code.ips"), "wb").write(ips(patch))
+        open(os.path.join(out, "cheat_gateway.txt"), "w", newline="\n").write(cheat(patch, name))
+        print(f"{region} ({tid}) {name}: {len(patch)} words")

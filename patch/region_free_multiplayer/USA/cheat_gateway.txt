@@ -1,0 +1,4 @@
+[Region-free local multiplayer]
+001201D8 E3A00D33
+001201EC E3822C0E
+001201F0 E1822001
