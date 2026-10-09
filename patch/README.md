@@ -2,7 +2,8 @@
 
 Three folders, each with a `code.ips` and a `cheat_gateway.txt` per region:
 
-- **`both/` (recommended):** both fixes in one patch. Use this unless you have a reason not to.
+- **`both/` (recommended):** both fixes in one patch, using a private network ID (below). Use this
+  unless you have a reason not to.
 - `coop_bounce_fix/`: only the bounce fix (both players can bounce off the same enemy).
 - `region_free_multiplayer/`: only the region fix (different regions can play local co-op together).
 
@@ -58,6 +59,24 @@ Helper address: USA `0x1201D4`, Europe `0x1201F4`, Japan `0x1201FC`, Korea `0x12
 together, where unpatched ones never see each other. Japan and Korea are the same three
 instructions at their own helper addresses, not tested on hardware. (Azahar can't test this patch:
 its local-wireless emulation returns every session regardless of the communication ID.)
+
+## Private network ID (`both/` only)
+
+A patched and an unpatched copy run different game logic, so if they join each other, co-op
+desyncs and the game drops the connection (seen on real hardware). To prevent that, `both/` doesn't
+use the USA ID; it uses a private one that no retail version uses: unique ID `0xDC001`. The last
+digit is a network version, to bump if a future patch changes game logic again. It's the same
+3-instruction change to the ID helper, with different values:
+
+| Offset in helper | Original | Patched |
+|---|---|---|
+| `+0x04` | `bic r0, r0, #0xf00000` | `mov r0, #0xdc000` |
+| `+0x18` | `cmp r1, #0` | `orr r2, r2, #0x100` |
+| `+0x1C` | `orrne r2, r2, #1` | `orr r2, r2, r1` |
+
+So copies with `both/` find each other, whatever their region, and never see unpatched copies.
+`region_free_multiplayer/` keeps the USA ID instead: it doesn't change game logic, so it's safe to
+play with unpatched USA copies.
 
 ## Pick your region
 Use the folder matching your game's title ID (`TID` below). Bounce-fix addresses elsewhere in this

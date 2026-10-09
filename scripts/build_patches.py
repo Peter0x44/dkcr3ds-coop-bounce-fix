@@ -96,6 +96,19 @@ def build_region_free(helper):
         (helper + 0x1C, 0x13822001, 0xE1822001, "orr r2, r2, r1      ; was orrne r2,r2,#1 (r1 is 0 or 1)"),
     ]
 
+# Private ID for the combined patch: unique ID 0xDC001, used by no retail version, so copies with
+# the bounce fix only ever find each other (a patched and an unpatched copy desync and disconnect).
+# The last digit is the patch's network version: bump it if a future change alters game logic.
+PRIVATE_UNIQUE_ID = 0xDC001
+
+def build_private_id(helper):
+    """Always return the private local communication ID (unique ID 0xDC001), keeping the flag bits."""
+    return [
+        (helper + 0x04, 0xE3C0060F, 0xE3A00937, "mov r0, #0xdc000    ; was bic r0,r0,#0xf00000 (ignore caller's ID)"),
+        (helper + 0x18, 0xE3510000, 0xE3822C01, "orr r2, r2, #0x100  ; was cmp r1,#0 (0xdc000|0x1 = 0xdc001 after <<8)"),
+        (helper + 0x1C, 0x13822001, 0xE1822001, "orr r2, r2, r1      ; was orrne r2,r2,#1 (r1 is 0 or 1)"),
+    ]
+
 def ips(patch):
     out = bytearray(b"PATCH")
     for addr, _, new, _ in patch:  # record: 24-bit offset, 16-bit size, data
@@ -116,7 +129,7 @@ for region, (tid, *sites) in REGIONS.items():
         "coop_bounce_fix": build(*sites),
         "region_free_multiplayer": build_region_free(COMM_ID_HELPER[region]),
     }
-    patches["both"] = patches["coop_bounce_fix"] + patches["region_free_multiplayer"]
+    patches["both"] = patches["coop_bounce_fix"] + build_private_id(COMM_ID_HELPER[region])
     if region in checks:
         code = open(checks[region], "rb").read()
         for addr, old, _, _ in patches["both"]:

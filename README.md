@@ -35,6 +35,9 @@ title ID and download `code.ips` (or `cheat_gateway.txt` for the cheat version):
   Luma loads only one `code.ips` per game, so you can't install two of these together; use
   **Both** for that.
 - **Playing together:** everyone uses **Both**, whatever their region.
+- **Private network ID:** **Both** uses its own local-multiplayer ID that no retail copy uses, so
+  patched copies only ever find other patched copies. A patched and an unpatched copy can't
+  accidentally join each other and desync.
 
 Install instructions and a short technical summary: [`patch/README.md`](patch/README.md).
 

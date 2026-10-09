@@ -783,8 +783,25 @@ logic. Co-op keeps them in lockstep, and the bounce fix changes what happens whe
 touched, so a patched and an unpatched copy diverge and the game detects it. **Every player needs
 the same patch.**
 
+### A private network ID for the combined patch
+
+After that result, the combined patch (`both/`) was switched to a **private** communication ID that
+no retail version uses, unique ID `0xDC001`. Patched copies then only find other patched copies, and
+an unpatched copy can never be joined by accident. The last digit is a network version, to bump if
+a future patch changes game logic again.
+
+It's the same three instructions in the ID helper with different values (`mov r0, #0xdc000` and
+`orr r2, r2, #0x100`), checked to give `0xDC001` for every flag combination.
+`region_free_multiplayer/` keeps the USA ID, since it doesn't change game logic.
+
+Testing it in Azahar showed a patched and an unpatched copy finding each other. That led to the
+discovery that Azahar ignores the ID completely (see the "Tested" note above), so the emulator can't
+show the effect. On real hardware, the ID decides which sessions are visible, as the original
+region lock shows.
+
 ## 13. Still open
-- Play-test the Europe, Japan and Korea bounce patches, and the region-free patch with a Korean copy.
+- Play-test the Europe, Japan and Korea bounce patches, and the region fix with Japanese and Korean
+  copies on real hardware.
 - Try a late-game or K level that needs chained bounces.
 - The Switch version's 1.1.0 update fixed the same bug; comparing its window length would be a
   nice cross-check.
