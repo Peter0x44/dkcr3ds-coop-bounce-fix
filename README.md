@@ -13,7 +13,8 @@ Two small code patches for **Donkey Kong Country Returns 3D**, for all four reta
 **Status:**
 - **Real hardware:** tested on two 3DS consoles, a patched USA copy and a patched European copy
   playing co-op together. Works.
-- **Emulator:** tested in co-op in Azahar, including mixed regions (USA + Europe, USA + Japan).
+- **Emulator:** bounce fix tested in co-op in Azahar. (Azahar doesn't filter local sessions by
+  region, so it can't test the region fix; that was tested on real hardware.)
 - **Korea:** the same patches at that version's addresses, checked automatically but not play-tested.
 
 ## Download

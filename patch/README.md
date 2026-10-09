@@ -54,9 +54,10 @@ the USA ID (flag bits unchanged):
 
 Helper address: USA `0x1201D4`, Europe `0x1201F4`, Japan `0x1201FC`, Korea `0x120218`.
 
-**Status:** tested in Azahar with a USA copy playing together with a patched European copy, and with
-a patched Japanese copy. The Korean patch is the same three instructions at Korea's helper address,
-not play-tested.
+**Status:** tested on real hardware: patched USA and European copies find each other and play
+together, where unpatched ones never see each other. Japan and Korea are the same three
+instructions at their own helper addresses, not tested on hardware. (Azahar can't test this patch:
+its local-wireless emulation returns every session regardless of the communication ID.)
 
 ## Pick your region
 Use the folder matching your game's title ID (`TID` below). Bounce-fix addresses elsewhere in this

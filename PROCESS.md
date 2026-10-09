@@ -757,9 +757,14 @@ So patched copies of any region and **unpatched USA copies** all use the same ID
 each other; whether they can then play together depends on running the same game logic, see
 "Real-hardware results" below.)
 
-**Tested:** in Azahar, with a USA copy (no region patch) playing local co-op together with a
-patched European copy, and then with a patched Japanese copy. The Korean patch is the same three
-instructions at Korea's helper address and wasn't play-tested.
+**Tested:** on real hardware (see "Real-hardware results" below): patched USA and European copies
+find each other and play together.
+
+Azahar can't test this patch. Its scan handler (`RecvBeaconBroadcastData` in `nwm_uds.cpp`) reads
+the requested communication ID but only logs it, and returns every session it has received. So in
+Azahar any two copies see each other, patched or not; mixed-region sessions there say nothing about
+the fix. Japan and Korea use the same three instructions at their own helper addresses and weren't
+tested on hardware.
 
 The build script produces it as `patch/region_free_multiplayer/` and, combined with the bounce fix,
 as `patch/both/`. Luma loads only one `code.ips` per game, hence the combined version.
