@@ -11,12 +11,14 @@ Two small code patches for **Donkey Kong Country Returns 3D**, for all four reta
   find each other in local co-op. Without it, a session from another region simply never shows up.
 
 **Status:**
-- **Bounce fix:** tested in co-op in Azahar with the USA version.
-- **Region-free patch:** tested in Azahar with a USA copy playing together with a patched European
-  copy, and with a patched Japanese copy.
-- **Other versions:** the Korean region-free patch and the non-USA bounce fixes use the same code
-  at each build's addresses, found and verified automatically, but not play-tested.
-- **Real hardware:** nothing tested yet.
+- **Real hardware:** tested on two 3DS consoles, a patched USA copy and a patched European copy
+  playing co-op together. Works.
+- **Emulator:** tested in co-op in Azahar, including mixed regions (USA + Europe, USA + Japan).
+- **Korea:** the same patches at that version's addresses, checked automatically but not play-tested.
+
+**Every player needs the same patch.** Co-op runs the same game on every console in lockstep, so if
+one copy has the bounce fix and another doesn't, they go out of sync and the game drops the
+connection ("connection lost"). This was confirmed on real hardware.
 
 ## Download
 
@@ -35,9 +37,8 @@ title ID and download `code.ips` (or `cheat_gateway.txt` for the cheat version):
 - The **separate patches** are kept for anyone who wants to examine or apply one fix on its own.
   Luma loads only one `code.ips` per game, so you can't install two of these together; use
   **Both** for that.
-- **Mixed regions:** every patched copy uses the USA version's network ID, so an unpatched USA copy
-  can already play with patched copies of any region. Everyone still needs the bounce fix to get
-  the bounce, so just give everyone **Both**.
+- **Mixed regions / mixed patches:** everyone in a session must use the same fixes, or the game
+  desyncs and drops the connection. In practice: give everyone **Both**.
 
 Install instructions and a short technical summary: [`patch/README.md`](patch/README.md).
 

@@ -9,10 +9,15 @@ Three folders, each with a `code.ips` and a `cheat_gateway.txt` per region:
 The separate folders are there to examine each fix on its own. Luma loads only one `code.ips` per
 game, so to get both fixes use `both/`, not two separate patches.
 
+**Every player in a co-op session needs the same patch.** The consoles run the game in lockstep; if
+one has the bounce fix and another doesn't, they desync and the game drops the connection (seen on
+real hardware). Tested on real hardware with patched USA and European copies playing together.
+
 ## Co-op enemy bounce fix
 
-**Status:** USA tested in co-op in Azahar; both players can now bounce off the same enemy. Europe,
-Japan and Korea use the same code at their own addresses (verified by build script), not play-tested.
+**Status:** tested in co-op in Azahar (USA) and on real hardware (patched USA + European copies).
+Japan and Korea use the same code at their own addresses (verified by build script), not
+play-tested for the bounce itself.
 
 **Bug:** when player 1 bops an enemy, player 2 falls straight through it. The game already
 keeps a bopped enemy's corpse solid for 0.5 s (death type 1 starts a corpse timer), but two
@@ -52,7 +57,9 @@ the USA ID (flag bits unchanged):
 | `+0x1C` | `orrne r2, r2, #1` | `orr r2, r2, r1` |
 
 Helper address: USA `0x1201D4`, Europe `0x1201F4`, Japan `0x1201FC`, Korea `0x120218`. Unpatched
-USA copies already use this ID, so they can join patched copies of any region.
+USA copies already use this ID, so they can find patched copies of any region. They can only play
+together if both run the same game logic, though: with the bounce fix on one side only, the session
+desyncs. So everyone should use the same patch (normally `both/`).
 
 **Status:** tested in Azahar with a USA copy playing together with a patched European copy, and with
 a patched Japanese copy. The Korean patch is the same three instructions at Korea's helper address,
