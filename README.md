@@ -16,10 +16,6 @@ Two small code patches for **Donkey Kong Country Returns 3D**, for all four reta
 - **Emulator:** tested in co-op in Azahar, including mixed regions (USA + Europe, USA + Japan).
 - **Korea:** the same patches at that version's addresses, checked automatically but not play-tested.
 
-**Every player needs the same patch.** Co-op runs the same game on every console in lockstep, so if
-one copy has the bounce fix and another doesn't, they go out of sync and the game drops the
-connection ("connection lost"). This was confirmed on real hardware.
-
 ## Download
 
 **Recommended: the combined patch ("Both")**, which includes both fixes. Pick your version by
@@ -37,8 +33,7 @@ title ID and download `code.ips` (or `cheat_gateway.txt` for the cheat version):
 - The **separate patches** are kept for anyone who wants to examine or apply one fix on its own.
   Luma loads only one `code.ips` per game, so you can't install two of these together; use
   **Both** for that.
-- **Mixed regions / mixed patches:** everyone in a session must use the same fixes, or the game
-  desyncs and drops the connection. In practice: give everyone **Both**.
+- **Playing together:** everyone uses **Both**, whatever their region.
 
 Install instructions and a short technical summary: [`patch/README.md`](patch/README.md).
 
